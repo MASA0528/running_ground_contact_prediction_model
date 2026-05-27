@@ -9,119 +9,255 @@ class SEBlock(nn.Module):
 
     def __init__(self, channels, reduction=8):
         super().__init__()
+
         self.pool = nn.AdaptiveAvgPool1d(1)
+
         self.fc = nn.Sequential(
             nn.Linear(channels, channels // reduction),
             nn.ReLU(),
             nn.Linear(channels // reduction, channels),
-            nn.Sigmoid(),
+            nn.Sigmoid()
         )
 
     def forward(self, x):
-        """x: (B, C, T)"""
+
         b, c, _ = x.size()
+
         y = self.pool(x).view(b, c)
+
         y = self.fc(y).view(b, c, 1)
+
         return x * y
 
 
 # =====================================
-# Temporal Attention (修正あり)
+# Temporal Attention
 # =====================================
 class TemporalAttention(nn.Module):
 
     def __init__(self, hidden_size):
         super().__init__()
+
         self.attn = nn.Linear(hidden_size, 1)
 
     def forward(self, x):
-        """x: (B, T, H)"""
-        scores = self.attn(x)  # (B, T, 1)
-        weights = torch.softmax(scores, dim=1)  # (B, T, 1)
+        """
+        x: (B, T, H)
+        """
 
-        # 修正: 加重平均をとって時間軸 (T) を潰す
-        # (B, T, H) * (B, T, 1) -> (B, T, H) -> sum over T -> (B, H)
-        context = torch.sum(x * weights, dim=1)
+        scores = self.attn(x)
 
-        return context, weights
+        weights = torch.softmax(
+            scores,
+            dim=1
+        )
+
+        attended = x * weights
+
+        return attended, weights
 
 
 # =====================================
-# Model (修正あり)
+# CNN + GRU + Attention
 # =====================================
 class CNN_GRU_Attention(nn.Module):
 
     def __init__(
         self,
-        in_channels=8,
+        in_channels=14,
         conv_channels_1=16,
         conv_channels_2=32,
-        gru_hidden_size=64,
-        dropout_cnn=0.2,
-        dropout_gru=0.3,
+        conv_channels_3=64,
+        gru_hidden_size=32,
+        dropout_cnn1=0.3,
+        dropout_cnn2=0.5,
+        dropout_cnn3=0.5,
+        dropout_gru=0.4
     ):
         super().__init__()
 
-        # CNN
-        self.cnn = nn.Sequential(
+        # =================================
+        # CNN Block 1
+        # =================================
+        self.conv1 = nn.Sequential(
+
             nn.Conv1d(
-                in_channels, conv_channels_1, kernel_size=15, padding=7
+                in_channels=in_channels,
+                out_channels=conv_channels_1,
+                kernel_size=21,
+                padding=10,
+                stride=1
             ),
-            nn.BatchNorm1d(conv_channels_1),
-            nn.LeakyReLU(0.2),
-            nn.Dropout(dropout_cnn),
-            nn.Conv1d(
-                conv_channels_1, conv_channels_2, kernel_size=7, padding=3
+
+            nn.BatchNorm1d(
+                conv_channels_1
             ),
-            nn.BatchNorm1d(conv_channels_2),
-            nn.LeakyReLU(0.2),
-            nn.Dropout(dropout_cnn),
+
+            nn.LeakyReLU(
+                0.2
+            ),
+
+            nn.MaxPool1d(
+                kernel_size=3,
+                stride=1,
+                padding=1
+            ),
+
+            nn.Dropout(
+                dropout_cnn1
+            )
         )
 
-        # SE Block
-        self.se = SEBlock(conv_channels_2)
+        # =================================
+        # CNN Block 2
+        # =================================
+        self.conv2 = nn.Sequential(
 
+            nn.Conv1d(
+                conv_channels_1,
+                conv_channels_2,
+                kernel_size=15,
+                padding=7,
+                stride=1
+            ),
+
+            nn.BatchNorm1d(
+                conv_channels_2
+            ),
+
+            nn.LeakyReLU(
+                0.2
+            ),
+
+            nn.MaxPool1d(
+                kernel_size=3,
+                stride=1,
+                padding=1
+            ),
+
+            nn.Dropout(
+                dropout_cnn2
+            )
+        )
+
+        # =================================
+        # CNN Block 3
+        # =================================
+        self.conv3 = nn.Sequential(
+
+            nn.Conv1d(
+                conv_channels_2,
+                conv_channels_3,
+                kernel_size=11,
+                padding=5,
+                stride=1
+            ),
+
+            nn.BatchNorm1d(
+                conv_channels_3
+            ),
+
+            nn.LeakyReLU(
+                0.2
+            ),
+
+            nn.Dropout(
+                dropout_cnn3
+            )
+        )
+
+        # =================================
+        # SE
+        # =================================
+        self.se = SEBlock(
+            conv_channels_3
+        )
+
+        # =================================
         # GRU
+        # =================================
         self.gru = nn.GRU(
-            input_size=conv_channels_2,
+
+            input_size=conv_channels_3,
+
             hidden_size=gru_hidden_size,
+
             num_layers=1,
+
             batch_first=True,
+
+            bidirectional=True
         )
-        self.gru_dropout = nn.Dropout(dropout_gru)
 
-        # Temporal Attention
-        self.temporal_attention = TemporalAttention(gru_hidden_size)
+        self.gru_dropout = nn.Dropout(
+            dropout_gru
+        )
 
-        # 出力
-        self.fc = nn.Linear(gru_hidden_size, 1)
+        # =================================
+        # Attention
+        # =================================
+        self.temporal_attention = TemporalAttention(
+            gru_hidden_size * 2
+        )
+
+        # =================================
+        # FC
+        # =================================
+        self.fc = nn.Sequential(
+
+            nn.Linear(
+                gru_hidden_size*2 ,
+                16
+            ),
+
+            nn.LeakyReLU(
+                0.2
+            ),
+
+            nn.Dropout(
+                0.3
+            ),
+
+            nn.Linear(
+                16,
+                1
+            )
+        )
 
     def forward(self, x):
-        """x: (B, T, C)"""
-        # CNN (B, C, T)
-        x = x.permute(0, 2, 1)
-        x = self.cnn(x)
+        """
+        x: (B, T, C)
+        """
 
-        # SE Block (B, C, T)
+        # (B,T,C) → (B,C,T)
+        x = x.permute(0, 2, 1)
+
+        # CNN
+        x = self.conv1(x)
+        # (B,32,150)
+
+        x = self.conv2(x)
+        # (B,64,150)
+
+        x = self.conv3(x)
+        # (B,128,150)
+
+        # SE
         x = self.se(x)
 
-        # GRU (B, T, C)
+        # (B,C,T) → (B,T,C)
         x = x.permute(0, 2, 1)
+
+        # GRU
         out, _ = self.gru(x)
+
         out = self.gru_dropout(out)
 
-        # Temporal Attention (B, H) になる
-        context, weights = self.temporal_attention(out)
+        # Attention
+        out, weights = self.temporal_attention(out)
 
-        # 出力 (B, 1)
-        out = self.fc(context)
+        # FC
+        out = self.fc(out)
 
-        return out  
-
-
-# 動作確認用
-if __name__ == "__main__":
-    model = CNN_GRU_Attention()
-    dummy_input = torch.randn(32, 100, 8)  # (Batch=32, Time=100, Channel=8)
-    output = model(dummy_input)
-    print("Output shape:", output.shape)  # 期待値: torch.Size([32, 1])
+        # (B,150,1)
+        return out
