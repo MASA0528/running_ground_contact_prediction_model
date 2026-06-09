@@ -64,16 +64,17 @@ class CNN_GRU_Attention(nn.Module):
 
     def __init__(
         self,
-        in_channels=14,
+        in_channels=12,
         conv_channels_1=16,
         conv_channels_2=32,
         conv_channels_3=64,
-        gru_hidden_size=32,
-        dropout_cnn1=0.3,
-        dropout_cnn2=0.5,
-        dropout_cnn3=0.5,
-        dropout_gru=0.4,
-        dropout_fc=0.4,
+        gru_hidden_size=64,
+        fc_hidden_size=32,
+        dropout_cnn1=0.13000844385332877,
+        dropout_cnn2=0.2450249542948521,
+        dropout_cnn3=0.333294632167325,
+        dropout_gru=0.2917753403062322,
+        dropout_fc=0.32014556438414565,
         gn_groups_1=4,
         gn_groups_2=8,
         gn_groups_3=8
@@ -106,7 +107,7 @@ class CNN_GRU_Attention(nn.Module):
                 padding=1
             ),
 
-            nn.Dropout(
+            nn.Dropout1d(
                 dropout_cnn1
             )
         )
@@ -137,7 +138,7 @@ class CNN_GRU_Attention(nn.Module):
                 padding=1
             ),
 
-            nn.Dropout(
+            nn.Dropout1d(
                 dropout_cnn2
             )
         )
@@ -162,7 +163,7 @@ class CNN_GRU_Attention(nn.Module):
 
             nn.LeakyReLU(0.2),
 
-            nn.Dropout(
+            nn.Dropout1d(
                 dropout_cnn3
             )
         )
@@ -208,7 +209,7 @@ class CNN_GRU_Attention(nn.Module):
 
             nn.Linear(
                 gru_hidden_size,
-                32
+                fc_hidden_size
             ),
 
 
@@ -219,7 +220,7 @@ class CNN_GRU_Attention(nn.Module):
             ),
 
             nn.Linear(
-                32,
+                fc_hidden_size,
                 1
             )
         )
@@ -272,3 +273,23 @@ class CNN_GRU_Attention(nn.Module):
 
         # (B,T,1)
         return out
+    
+#パラメーターメモ
+# LR = 0.0006719676884816868,
+# Weight_decay = 4.0386223766278506e-05,
+
+# dropout_cnn1 = 0.20639376963003603
+# dropout_cnn2 = 0.1554931322161193
+# dropout_cnn3 = 0.2759652416801488
+# dropout_gru = 0.139253984870199
+# dropout_fc = 0.1631329023093721
+
+
+#メモ２
+#LR:0.0006400759829962542
+#Weight_decay: 0.00019344781192707518
+#'dropout_cnn1': 0.13000844385332877
+#'dropout_cnn2': 0.2450249542948521
+#'dropout_cnn3': 0.333294632167325
+#'dropout_gru': 0.2917753403062322
+#'dropout_fc': 0.32014556438414565
