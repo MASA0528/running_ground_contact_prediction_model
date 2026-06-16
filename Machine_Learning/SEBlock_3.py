@@ -293,3 +293,4 @@ class CNN_GRU_Attention(nn.Module):
 #'dropout_cnn3': 0.333294632167325
 #'dropout_gru': 0.2917753403062322
 #'dropout_fc': 0.32014556438414565
+#
